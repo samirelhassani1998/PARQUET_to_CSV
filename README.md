@@ -2,48 +2,65 @@
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://anefapi-ujclrot25dw4b77r2fg7w6.streamlit.app/)
 
-Outil professionnel pour convertir des fichiers Parquet en CSV, déployé sur Streamlit Cloud.
+Application Streamlit professionnelle pour convertir, fusionner et transformer des fichiers Parquet en CSV. Déployée sur Streamlit Cloud avec authentification par mot de passe.
 
 ## 🚀 Fonctionnalités
 
-- **Upload multiple** : Convertissez un ou plusieurs fichiers Parquet en une seule opération
-- **Conversion streaming** : Gestion optimisée de la mémoire pour les gros fichiers (utilisation de `iter_batches`)
-- **Options flexibles** :
-  - Séparateur personnalisable (`,`, `;`, `\t`, `|`)
-  - Encodage de sortie (`utf-8`, `latin-1`, `cp1252`)
-  - Inclusion/exclusion des en-têtes
-  - Conversion des types complexes (list, struct, map) en JSON
-- **Export ZIP** : Téléchargez plusieurs fichiers CSV dans une archive ZIP compressée
-- **Aperçu des données** : Visualisez les 50 premières lignes avant conversion
+### Conversion Parquet → CSV
+- **Upload multiple** : Convertissez un ou plusieurs fichiers en une seule opération
+- **Conversion streaming** : Gestion optimisée de la mémoire avec `iter_batches`
+- **Options CSV personnalisables** :
+  - Séparateur (`,`, `;`, `\t`, `|`)
+  - Encodage (`utf-8`, `latin-1`, `cp1252`)
+  - En-têtes inclus/exclus
+  - Types complexes → JSON
+- **Export ZIP** : Archive compressée pour plusieurs fichiers
+- **Aperçu** : 50 premières lignes + schéma avant conversion
+
+### 🔗 Fusion de fichiers
+- **UNION ALL** : Empiler les lignes de plusieurs fichiers (streaming PyArrow)
+  - Unification automatique des schémas
+  - Option colonne `_source_file` pour tracer l'origine
+- **JOIN sur clé** : Joindre les fichiers sur une colonne commune (DuckDB)
+  - Types : INNER, LEFT, OUTER
+  - Gestion des collisions de colonnes
+
+### 🔐 Authentification
+- Protection par mot de passe via Streamlit Secrets
+- Session persistante sur toutes les pages
+- Comparaison sécurisée (`hmac.compare_digest`)
+- Bouton de déconnexion
+
+---
 
 ## 📋 Utilisation
 
-1. Accédez à l'application : [Parquet → CSV Converter](https://anefapi-ujclrot25dw4b77r2fg7w6.streamlit.app/)
-2. Naviguez vers la page "Parquet → CSV" dans la barre latérale
-3. Uploadez un ou plusieurs fichiers `.parquet`
-4. Vérifiez l'aperçu et ajustez les options si nécessaire
-5. Cliquez sur "Convertir en CSV"
-6. Téléchargez le résultat (CSV unique ou archive ZIP)
+1. Accédez à l'app : [Parquet → CSV Converter](https://anefapi-ujclrot25dw4b77r2fg7w6.streamlit.app/)
+2. Entrez le mot de passe
+3. Naviguez vers "Parquet → CSV"
+4. Uploadez vos fichiers `.parquet`
+5. **Fichier unique** : Convertir → Télécharger CSV
+6. **Fichiers multiples** :
+   - Sans fusion → Télécharger ZIP
+   - Avec fusion (UNION/JOIN) → Télécharger CSV unique
 
-## 🔐 Authentification
+---
 
-L'application est protégée par mot de passe. L'authentification persiste sur toutes les pages via `session_state`.
+## 🔐 Configuration des Secrets
 
-### Configuration sur Streamlit Cloud
+### Sur Streamlit Cloud
 
-1. Allez dans les paramètres de votre app sur [Streamlit Cloud](https://share.streamlit.io/)
-2. Cliquez sur **Secrets** dans le menu
-3. Ajoutez la configuration suivante :
+Dans **Settings > Secrets** :
 
 ```toml
 [auth]
 required = true
-password = "votre_mot_de_passe_secret"
+password = "votre_mot_de_passe"
 ```
 
-### Configuration locale
+### En local
 
-Pour le développement local, créez le fichier `.streamlit/secrets.toml` :
+Créez `.streamlit/secrets.toml` :
 
 ```toml
 [auth]
@@ -51,96 +68,87 @@ required = true
 password = "dev_password"
 ```
 
-> ⚠️ **Important** : Ne commitez jamais `secrets.toml` dans Git ! Le fichier est déjà dans `.gitignore`.
+> ⚠️ Ce fichier est dans `.gitignore` - ne jamais le commiter !
 
-### Désactiver l'authentification
-
-Pour désactiver temporairement l'authentification, mettez `required = false` dans les secrets.
+---
 
 ## ⚠️ Limites
 
 | Paramètre | Limite | Note |
 |-----------|--------|------|
-| Taille max par fichier | 200 MB | Configurable dans `.streamlit/config.toml` |
-| Mémoire disponible | ~1 GB | Limite Streamlit Cloud |
-| Types supportés | Tous | Les types complexes sont sérialisés en JSON |
+| Taille max/fichier | 200 MB | Configurable dans `config.toml` |
+| Mémoire | ~1 GB | Limite Streamlit Cloud |
+| Types complexes | Tous | Sérialisés en JSON |
 
-### Conseils pour les gros fichiers
-
-- Préférez traiter les fichiers un par un pour économiser la mémoire
-- Activez l'option "Convertir types complexes en JSON" pour éviter les erreurs
-- Pour les fichiers > 200 MB, utilisez des outils CLI comme `pyarrow` en local
+---
 
 ## 🛠️ Développement local
 
-### Prérequis
-
-- Python 3.8+
-- pip
-
-### Installation
-
 ```bash
-# Cloner le repo
-git clone https://github.com/votre-repo/PARQUET_to_CSV.git
+# Cloner
+git clone https://github.com/samirelhassani1998/PARQUET_to_CSV.git
 cd PARQUET_to_CSV
 
-# Installer les dépendances
+# Installer
 pip install -r requirements.txt
 
-# Lancer l'application
+# Configurer les secrets
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+# Éditer secrets.toml avec votre mot de passe
+
+# Lancer
 streamlit run streamlit_app.py
-```
 
-### Tests
-
-```bash
-# Installer pytest
+# Tests (31 tests)
 pip install pytest
-
-# Lancer les tests
 pytest tests/ -v
 ```
+
+---
 
 ## 📁 Structure du projet
 
 ```
 PARQUET_to_CSV/
 ├── .streamlit/
-│   ├── config.toml          # Configuration Streamlit
-│   └── secrets.toml          # Secrets (local only, gitignored)
+│   ├── config.toml           # Config Streamlit (upload limit)
+│   └── secrets.toml          # Secrets (gitignored)
 ├── app/
 │   ├── auth.py               # Authentification
 │   └── services/
-│       └── parquet_to_csv.py # Logique de conversion
+│       └── parquet_to_csv.py # Conversion + fusion
 ├── pages/
-│   └── 1_Parquet_to_CSV.py   # Page de conversion
+│   └── 1_Parquet_to_CSV.py   # Page principale
 ├── tests/
-│   └── test_parquet_to_csv.py # Tests unitaires
+│   ├── test_auth.py          # Tests auth (5)
+│   └── test_parquet_to_csv.py# Tests conversion (26)
 ├── streamlit_app.py          # Point d'entrée
-├── requirements.txt          # Dépendances
+├── requirements.txt          # streamlit, pyarrow, duckdb
 └── README.md
 ```
 
-## 🐛 Troubleshooting
-
-### "Cannot read Parquet file"
-- Vérifiez que le fichier est un Parquet valide (non corrompu)
-- Essayez d'ouvrir le fichier localement avec `pyarrow`
-
-### "Memory error" ou crash
-- Le fichier est trop volumineux pour Streamlit Cloud
-- Solutions :
-  - Découpez le fichier en parties plus petites
-  - Utilisez l'outil en local avec plus de RAM
-
-### Caractères spéciaux incorrects
-- Changez l'encodage de sortie (`latin-1` pour les caractères européens)
+---
 
 ## 📦 Technologies
 
-- [Streamlit](https://streamlit.io/) - Interface web
-- [PyArrow](https://arrow.apache.org/docs/python/) - Lecture/écriture Parquet et CSV
+| Technologie | Usage |
+|-------------|-------|
+| [Streamlit](https://streamlit.io/) | Interface web |
+| [PyArrow](https://arrow.apache.org/docs/python/) | Lecture/écriture Parquet, CSV streaming |
+| [DuckDB](https://duckdb.org/) | JOIN SQL performant |
+
+---
+
+## 🐛 Troubleshooting
+
+| Erreur | Solution |
+|--------|----------|
+| "Cannot read Parquet" | Vérifiez que le fichier n'est pas corrompu |
+| "Memory error" | Fichier trop gros → traiter en local |
+| Caractères incorrects | Changez l'encodage (`latin-1`) |
+| "Mot de passe incorrect" | Vérifiez les Secrets sur Streamlit Cloud |
+
+---
 
 ## 📄 Licence
 
