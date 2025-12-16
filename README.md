@@ -25,6 +25,38 @@ Outil professionnel pour convertir des fichiers Parquet en CSV, déployé sur St
 5. Cliquez sur "Convertir en CSV"
 6. Téléchargez le résultat (CSV unique ou archive ZIP)
 
+## 🔐 Authentification
+
+L'application est protégée par mot de passe. L'authentification persiste sur toutes les pages via `session_state`.
+
+### Configuration sur Streamlit Cloud
+
+1. Allez dans les paramètres de votre app sur [Streamlit Cloud](https://share.streamlit.io/)
+2. Cliquez sur **Secrets** dans le menu
+3. Ajoutez la configuration suivante :
+
+```toml
+[auth]
+required = true
+password = "votre_mot_de_passe_secret"
+```
+
+### Configuration locale
+
+Pour le développement local, créez le fichier `.streamlit/secrets.toml` :
+
+```toml
+[auth]
+required = true
+password = "dev_password"
+```
+
+> ⚠️ **Important** : Ne commitez jamais `secrets.toml` dans Git ! Le fichier est déjà dans `.gitignore`.
+
+### Désactiver l'authentification
+
+Pour désactiver temporairement l'authentification, mettez `required = false` dans les secrets.
+
 ## ⚠️ Limites
 
 | Paramètre | Limite | Note |
@@ -75,8 +107,10 @@ pytest tests/ -v
 ```
 PARQUET_to_CSV/
 ├── .streamlit/
-│   └── config.toml          # Configuration Streamlit
+│   ├── config.toml          # Configuration Streamlit
+│   └── secrets.toml          # Secrets (local only, gitignored)
 ├── app/
+│   ├── auth.py               # Authentification
 │   └── services/
 │       └── parquet_to_csv.py # Logique de conversion
 ├── pages/

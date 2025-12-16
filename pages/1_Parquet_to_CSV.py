@@ -31,6 +31,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Authentication gate - blocks access until authenticated
+from app.auth import require_password, show_logout_button
+require_password()
+show_logout_button()
+
 st.title("🔄 Parquet → CSV")
 st.markdown("Convertissez vos fichiers Parquet en CSV avec des options personnalisées.")
 

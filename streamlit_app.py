@@ -15,6 +15,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Authentication gate - blocks access until authenticated
+from app.auth import require_password, show_logout_button
+require_password()
+show_logout_button()
+
 # Main page content
 st.title("📊 Parquet → CSV Converter")
 
