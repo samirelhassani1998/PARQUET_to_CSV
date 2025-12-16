@@ -21,6 +21,9 @@ from app.services.parquet_to_csv import (
     convert_parquet_filelike_to_csv_bytes,
     convert_multiple_to_zip_bytes,
     get_parquet_preview,
+    get_common_columns,
+    merge_parquets_union_to_csv_bytes,
+    merge_parquets_join_to_csv_bytes,
     _is_complex_type,
     _serialize_complex_value,
 )
@@ -306,3 +309,187 @@ class TestEncodings:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestMergeUnion:
+    """Tests for UNION ALL merge functionality."""
+    
+    def test_union_same_schema(self):
+        """Test merging files with identical schemas."""
+        files = [
+            ("file1.parquet", create_simple_parquet()),
+            ("file2.parquet", create_simple_parquet()),
+        ]
+        
+        csv_bytes = merge_parquets_union_to_csv_bytes(files)
+        csv_text = csv_bytes.decode("utf-8")
+        lines = csv_text.strip().split("\n")
+        
+        # Header + 5 rows from file1 + 5 rows from file2
+        assert len(lines) == 11
+        assert "Alice" in csv_text
+    
+    def test_union_with_source_column(self):
+        """Test adding source file column."""
+        files = [
+            ("data_a.parquet", create_simple_parquet()),
+            ("data_b.parquet", create_simple_parquet()),
+        ]
+        
+        csv_bytes = merge_parquets_union_to_csv_bytes(files, add_source_column=True)
+        csv_text = csv_bytes.decode("utf-8")
+        
+        assert "_source_file" in csv_text or "source_file" in csv_text
+        assert "data_a.parquet" in csv_text
+        assert "data_b.parquet" in csv_text
+    
+    def test_union_different_schemas(self):
+        """Test merging files with different column sets."""
+        # Create two files with partially overlapping schemas
+        table1 = pa.table({
+            "id": [1, 2],
+            "name": ["A", "B"],
+        })
+        buffer1 = io.BytesIO()
+        pq.write_table(table1, buffer1)
+        buffer1.seek(0)
+        
+        table2 = pa.table({
+            "id": [3, 4],
+            "email": ["c@test.com", "d@test.com"],
+        })
+        buffer2 = io.BytesIO()
+        pq.write_table(table2, buffer2)
+        buffer2.seek(0)
+        
+        files = [
+            ("file1.parquet", buffer1),
+            ("file2.parquet", buffer2),
+        ]
+        
+        csv_bytes = merge_parquets_union_to_csv_bytes(files)
+        csv_text = csv_bytes.decode("utf-8")
+        
+        # Should have 4 rows total + header
+        lines = csv_text.strip().split("\n")
+        assert len(lines) == 5
+    
+    def test_union_with_progress(self):
+        """Test progress callback for UNION."""
+        files = [
+            ("file1.parquet", create_simple_parquet()),
+            ("file2.parquet", create_simple_parquet()),
+        ]
+        
+        progress_calls = []
+        
+        def callback(current, total, filename):
+            progress_calls.append((current, total, filename))
+        
+        csv_bytes = merge_parquets_union_to_csv_bytes(files, progress_callback=callback)
+        
+        assert len(progress_calls) >= 2
+
+
+class TestMergeJoin:
+    """Tests for JOIN merge functionality."""
+    
+    def test_join_on_key(self):
+        """Test basic JOIN on a key column."""
+        # Create two related tables
+        table1 = pa.table({
+            "id": [1, 2, 3],
+            "name": ["Alice", "Bob", "Charlie"],
+        })
+        buffer1 = io.BytesIO()
+        pq.write_table(table1, buffer1)
+        buffer1.seek(0)
+        
+        table2 = pa.table({
+            "id": [1, 2, 3],
+            "score": [95.0, 87.0, 92.0],
+        })
+        buffer2 = io.BytesIO()
+        pq.write_table(table2, buffer2)
+        buffer2.seek(0)
+        
+        files = [
+            ("users.parquet", buffer1),
+            ("scores.parquet", buffer2),
+        ]
+        
+        csv_bytes = merge_parquets_join_to_csv_bytes(files, join_key="id")
+        csv_text = csv_bytes.decode("utf-8")
+        
+        # Should have 3 rows + header
+        lines = csv_text.strip().split("\n")
+        assert len(lines) == 4
+        assert "Alice" in csv_text
+        assert "95" in csv_text
+    
+    def test_join_handles_collisions(self):
+        """Test that column name collisions are handled."""
+        table1 = pa.table({
+            "id": [1, 2],
+            "value": ["A", "B"],
+        })
+        buffer1 = io.BytesIO()
+        pq.write_table(table1, buffer1)
+        buffer1.seek(0)
+        
+        table2 = pa.table({
+            "id": [1, 2],
+            "value": ["X", "Y"],  # Same column name
+        })
+        buffer2 = io.BytesIO()
+        pq.write_table(table2, buffer2)
+        buffer2.seek(0)
+        
+        files = [
+            ("file1.parquet", buffer1),
+            ("file2.parquet", buffer2),
+        ]
+        
+        csv_bytes = merge_parquets_join_to_csv_bytes(files, join_key="id")
+        csv_text = csv_bytes.decode("utf-8")
+        
+        # Both value columns should appear (one with suffix)
+        assert "value" in csv_text
+        assert "A" in csv_text
+        assert "X" in csv_text
+
+
+class TestGetCommonColumns:
+    """Tests for common column detection."""
+    
+    def test_common_columns(self):
+        """Test finding common columns across files."""
+        table1 = pa.table({
+            "id": [1, 2],
+            "name": ["A", "B"],
+            "extra1": [1, 2],
+        })
+        buffer1 = io.BytesIO()
+        pq.write_table(table1, buffer1)
+        buffer1.seek(0)
+        
+        table2 = pa.table({
+            "id": [3, 4],
+            "name": ["C", "D"],
+            "extra2": [3, 4],
+        })
+        buffer2 = io.BytesIO()
+        pq.write_table(table2, buffer2)
+        buffer2.seek(0)
+        
+        files = [
+            ("file1.parquet", buffer1),
+            ("file2.parquet", buffer2),
+        ]
+        
+        common = get_common_columns(files)
+        
+        assert "id" in common
+        assert "name" in common
+        assert "extra1" not in common
+        assert "extra2" not in common

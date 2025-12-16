@@ -2,6 +2,7 @@
 Parquet → CSV Conversion Page
 
 This page provides the UI for converting Parquet files to CSV format.
+Supports merging multiple files via UNION ALL or JOIN.
 """
 
 import io
@@ -17,6 +18,9 @@ from app.services.parquet_to_csv import (
     convert_parquet_filelike_to_csv_bytes,
     convert_multiple_to_zip_bytes,
     get_parquet_preview,
+    get_common_columns,
+    merge_parquets_union_to_csv_bytes,
+    merge_parquets_join_to_csv_bytes,
 )
 
 # Page configuration
@@ -82,6 +86,70 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     st.success(f"✅ {len(uploaded_files)} fichier(s) uploadé(s)")
     
+    # Merge options (only show when multiple files)
+    merge_enabled = False
+    merge_mode = "union"
+    add_source_column = False
+    join_key = None
+    join_type = "inner"
+    
+    if len(uploaded_files) > 1:
+        st.sidebar.markdown("---")
+        st.sidebar.header("🔗 Fusion")
+        
+        merge_enabled = st.sidebar.checkbox(
+            "Fusionner en un seul output",
+            value=False,
+            help="Combiner tous les fichiers en un seul CSV"
+        )
+        
+        if merge_enabled:
+            merge_mode = st.sidebar.radio(
+                "Mode de fusion",
+                options=["union", "join"],
+                format_func=lambda x: {
+                    "union": "A) UNION ALL (empiler lignes)",
+                    "join": "B) JOIN sur clé"
+                }[x]
+            )
+            
+            if merge_mode == "union":
+                add_source_column = st.sidebar.checkbox(
+                    "Ajouter colonne 'source_file'",
+                    value=False,
+                    help="Identifie l'origine de chaque ligne"
+                )
+            else:
+                # Get common columns for JOIN key selection
+                # Read files to find common columns
+                temp_files = []
+                for f in uploaded_files:
+                    f.seek(0)
+                    content = f.read()
+                    temp_files.append((f.name, io.BytesIO(content)))
+                    f.seek(0)
+                
+                common_cols = get_common_columns(temp_files)
+                
+                if common_cols:
+                    join_key = st.sidebar.selectbox(
+                        "Colonne clé pour JOIN",
+                        options=common_cols,
+                        help="Colonne commune pour joindre les fichiers"
+                    )
+                    join_type = st.sidebar.selectbox(
+                        "Type de JOIN",
+                        options=["inner", "left", "outer"],
+                        format_func=lambda x: {
+                            "inner": "INNER (intersection)",
+                            "left": "LEFT (garder tout de gauche)",
+                            "outer": "OUTER (garder tout)"
+                        }[x]
+                    )
+                else:
+                    st.sidebar.warning("⚠️ Aucune colonne commune trouvée pour JOIN")
+                    merge_mode = "union"  # Fall back to union
+    
     # Display file info and previews
     st.header("📋 Aperçu des fichiers")
     
@@ -131,16 +199,96 @@ if uploaded_files:
         valid_files = [(name, f) for name, f in file_data if name not in preview_errors]
         
         if len(valid_files) > 0:
-            if st.button("🔄 Convertir en CSV", type="primary", use_container_width=True):
+            # Determine button label based on mode
+            if merge_enabled and len(valid_files) > 1:
+                if merge_mode == "union":
+                    button_label = "🔗 Fusionner (UNION ALL) → CSV"
+                else:
+                    button_label = "🔗 Joindre (JOIN) → CSV"
+            elif len(valid_files) == 1:
+                button_label = "🔄 Convertir en CSV"
+            else:
+                button_label = "🔄 Convertir en ZIP"
+            
+            if st.button(button_label, type="primary", use_container_width=True):
                 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
                 try:
-                    if len(valid_files) == 1:
-                        # Single file conversion
-                        filename, file_obj = valid_files[0]
-                        file_obj.seek(0)
+                    # Prepare files (read into BytesIO)
+                    files_for_conversion = []
+                    for name, f in valid_files:
+                        f.seek(0)
+                        content = f.read()
+                        files_for_conversion.append((name, io.BytesIO(content)))
+                    
+                    # MERGE MODE: UNION ALL
+                    if merge_enabled and len(valid_files) > 1 and merge_mode == "union":
+                        status_text.text(f"Fusion UNION ALL de {len(valid_files)} fichiers...")
+                        
+                        def update_progress(current, total, filename):
+                            progress = current / total
+                            progress_bar.progress(progress)
+                            status_text.text(f"Traitement : {filename}")
+                        
+                        csv_bytes = merge_parquets_union_to_csv_bytes(
+                            files_for_conversion,
+                            add_source_column=add_source_column,
+                            separator=separator,
+                            encoding=encoding,
+                            include_header=include_header,
+                            convert_complex_to_json=convert_complex,
+                            progress_callback=update_progress
+                        )
+                        
+                        progress_bar.progress(1.0)
+                        status_text.text("✅ Fusion terminée !")
+                        
+                        st.download_button(
+                            label="⬇️ Télécharger merged.csv",
+                            data=csv_bytes,
+                            file_name="merged.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                        
+                        st.info(f"📊 Taille du CSV fusionné : {len(csv_bytes) / 1024:.1f} KB")
+                    
+                    # MERGE MODE: JOIN
+                    elif merge_enabled and len(valid_files) > 1 and merge_mode == "join" and join_key:
+                        status_text.text(f"JOIN {join_type.upper()} sur '{join_key}'...")
+                        
+                        def update_progress(current, total, message):
+                            progress = current / total
+                            progress_bar.progress(progress)
+                            status_text.text(message)
+                        
+                        csv_bytes = merge_parquets_join_to_csv_bytes(
+                            files_for_conversion,
+                            join_key=join_key,
+                            join_type=join_type,
+                            separator=separator,
+                            encoding=encoding,
+                            progress_callback=update_progress
+                        )
+                        
+                        progress_bar.progress(1.0)
+                        status_text.text("✅ JOIN terminé !")
+                        
+                        st.download_button(
+                            label="⬇️ Télécharger joined.csv",
+                            data=csv_bytes,
+                            file_name="joined.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                        
+                        st.info(f"📊 Taille du CSV joint : {len(csv_bytes) / 1024:.1f} KB")
+                    
+                    # SINGLE FILE
+                    elif len(valid_files) == 1:
+                        filename, file_obj = files_for_conversion[0]
                         
                         status_text.text(f"Conversion de {filename}...")
                         
@@ -160,7 +308,6 @@ if uploaded_files:
                         progress_bar.progress(1.0)
                         status_text.text("✅ Conversion terminée !")
                         
-                        # Generate output filename
                         csv_filename = filename.rsplit('.', 1)[0] + '.csv'
                         
                         st.download_button(
@@ -172,18 +319,10 @@ if uploaded_files:
                         )
                         
                         st.info(f"📊 Taille du CSV : {len(csv_bytes) / 1024:.1f} KB")
-                        
+                    
+                    # MULTIPLE FILES - ZIP (no merge)
                     else:
-                        # Multiple files - create ZIP
                         status_text.text(f"Préparation de {len(valid_files)} fichiers...")
-                        
-                        # Reset all file positions
-                        files_for_conversion = []
-                        for name, f in valid_files:
-                            f.seek(0)
-                            # Read into BytesIO to avoid issues with file pointers
-                            content = f.read()
-                            files_for_conversion.append((name, io.BytesIO(content)))
                         
                         def update_zip_progress(current, total, filename):
                             progress = current / total
@@ -219,7 +358,8 @@ if uploaded_files:
                     **Solutions possibles :**
                     - Vérifiez que les fichiers sont des fichiers Parquet valides
                     - Activez l'option "Convertir types complexes en JSON"
-                    - Essayez avec des fichiers plus petits
+                    - Pour UNION: vérifiez que les schémas sont compatibles
+                    - Pour JOIN: vérifiez que la colonne clé existe dans tous les fichiers
                     """)
         else:
             st.warning("⚠️ Aucun fichier valide à convertir")
@@ -233,6 +373,9 @@ else:
         1. Cliquez sur "Browse files" ou glissez-déposez vos fichiers
         2. Vérifiez l'aperçu de vos données
         3. Ajustez les options CSV dans la barre latérale si nécessaire
-        4. Cliquez sur "Convertir en CSV"
-        5. Téléchargez le résultat (CSV ou ZIP)
+        4. **Nouveau !** Pour plusieurs fichiers, activez "Fusionner en un seul output"
+           - **UNION ALL** : Empile les lignes de tous les fichiers
+           - **JOIN** : Joint les fichiers sur une colonne clé commune
+        5. Cliquez sur le bouton de conversion
+        6. Téléchargez le résultat
         """)
