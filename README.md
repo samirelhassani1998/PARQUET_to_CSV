@@ -93,7 +93,7 @@ cd PARQUET_to_CSV
 pip install -r requirements.txt
 
 # Configurer les secrets
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+cp .streamlit/secrets.template.toml .streamlit/secrets.toml
 # Éditer secrets.toml avec votre mot de passe
 
 # Lancer
@@ -111,19 +111,25 @@ pytest tests/ -v
 ```
 PARQUET_to_CSV/
 ├── .streamlit/
-│   ├── config.toml           # Config Streamlit (upload limit)
-│   └── secrets.toml          # Secrets (gitignored)
+│   ├── config.toml              # Config Streamlit (upload limit)
+│   ├── secrets.template.toml    # Template pour secrets
+│   └── secrets.toml             # Secrets locaux (gitignored)
 ├── app/
-│   ├── auth.py               # Authentification
+│   ├── auth.py                  # Authentification
 │   └── services/
-│       └── parquet_to_csv.py # Conversion + fusion
+│       └── parquet_to_csv.py    # Conversion + fusion
 ├── pages/
-│   └── 1_Parquet_to_CSV.py   # Page principale
+│   └── 1_Parquet_to_CSV.py      # Page principale
+├── scripts/
+│   ├── build_windows.ps1        # Build Windows (PowerShell)
+│   └── build_windows.cmd        # Build Windows (CMD)
 ├── tests/
-│   ├── test_auth.py          # Tests auth (5)
-│   └── test_parquet_to_csv.py# Tests conversion (26)
-├── streamlit_app.py          # Point d'entrée
-├── requirements.txt          # streamlit, pyarrow, duckdb
+│   ├── test_auth.py             # Tests auth (5)
+│   └── test_parquet_to_csv.py   # Tests conversion (26)
+├── streamlit_app.py             # Point d'entrée Streamlit
+├── run_app.py                   # Lanceur pour .exe
+├── ParquetToCSV.spec            # Config PyInstaller
+├── requirements.txt             # streamlit, pyarrow, duckdb
 └── README.md
 ```
 
@@ -147,6 +153,85 @@ PARQUET_to_CSV/
 | "Memory error" | Fichier trop gros → traiter en local |
 | Caractères incorrects | Changez l'encodage (`latin-1`) |
 | "Mot de passe incorrect" | Vérifiez les Secrets sur Streamlit Cloud |
+
+---
+
+## 🖥️ Build Windows (.exe)
+
+### Prérequis machine de build
+
+- Windows 10/11
+- Python 3.9+ (testé avec 3.11)
+- ~2 GB d'espace disque
+
+### Commande de build
+
+```powershell
+# Option 1: PowerShell
+.\scripts\build_windows.ps1
+
+# Option 2: CMD
+.\scripts\build_windows.cmd
+
+# Avec nettoyage préalable
+.\scripts\build_windows.ps1 -Clean
+```
+
+### Artefact produit
+
+```
+dist\ParquetToCSV\
+├── ParquetToCSV.exe      # Exécutable principal
+├── _internal\            # Dépendances Python
+├── pages\                # Pages Streamlit
+├── app\                  # Modules applicatifs
+└── .streamlit\           # Config (sans secrets)
+```
+
+---
+
+## 📦 Installation utilisateur final
+
+### Étapes
+
+1. **Copier** le dossier `dist\ParquetToCSV\` sur le PC cible
+2. **Double-clic** sur `ParquetToCSV.exe`
+3. Le navigateur s'ouvre automatiquement sur `http://localhost:8501`
+
+### Configuration mot de passe (optionnel)
+
+Par défaut, l'app fonctionne **sans authentification** si aucun secret n'est configuré.
+
+Pour activer l'auth :
+
+**Option 1 : Global utilisateur** (recommandé)
+```
+%USERPROFILE%\.streamlit\secrets.toml
+```
+
+**Option 2 : Par projet**
+```
+[dossier_ParquetToCSV]\.streamlit\secrets.toml
+```
+
+Contenu du fichier :
+```toml
+[auth]
+required = true
+password = "votre_mot_de_passe"
+```
+
+---
+
+## 🔧 Troubleshooting Windows
+
+| Problème | Solution |
+|----------|----------|
+| Port 8501 occupé | Fermez l'autre instance ou modifiez le port dans `run_app.py` |
+| Antivirus bloque l'exe | Ajoutez une exception pour `ParquetToCSV.exe` |
+| "DLL not found" pyarrow | Rébuilder avec `--clean` ou installer VC++ Redistributable |
+| Fenêtre console se ferme vite | Lancez depuis CMD pour voir les erreurs |
+| Navigateur ne s'ouvre pas | Ouvrez manuellement `http://localhost:8501` |
 
 ---
 
